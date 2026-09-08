@@ -5,8 +5,8 @@
 لا تحتاج Android Studio ولا أي أدوات محلية:
 
 1. ادفع أي commit إلى الفرع (أو افتح تبويب **Actions** في المستودع).
-2. سير العمل **Build APK** (`.github/workflows/build-apk.yml`) يعمل تلقائيًا على كل push
-   إلى `main` أو `arena/**`، أو يدويًا عبر **Run workflow**.
+2. سير العمل **Build APK** (`.github/workflows/build-apk.yml`) يعمل على كل **وسم**
+   (`tags: [ 'v*' ]`) أو يدويًا عبر **Run workflow** من تبويب Actions.
 3. بعد ~5–10 دقائق تحصل على الملف من أحد مكانين:
    - **Releases** → [`apk-latest`](https://github.com/Hesham777777/USB-Media-Explorer/releases/tag/apk-latest)
      → نزّل `USB-Media-Explorer-debug.apk` (رابط ثابت يتحدث مع كل بناء ناجح)، أو
@@ -16,10 +16,11 @@
 
 ملاحظات:
 - عند رفع وسم مثل `v1.0.0` يُنشئ السير **Release** مرفقًا به ملف الـAPK.
-- نسخة `release` تُبنى غير موقّعة (`app-release-unsigned.apk`)؛ لتوقيعها أضف المفاتيح
-   كما في القسم 4.
-- `gradle-wrapper.jar` غير مودَع في المستودع (ملف ثنائي)، لذلك يولّده السير بأمر
-  `gradle wrapper --gradle-version 8.9` قبل البناء.
+- نسخة `release` موقّعة بالمفتاح المُدَوَّر القادم من أسرار المستودع
+  (`USBMEDIA_KEYSTORE_B64` + `USBMEDIA_STORE_PASSWORD`/`USBMEDIA_KEY_ALIAS`/`USBMEDIA_KEY_PASSWORD`)؛
+  ويفشل البناء عند غيابها — لا يوجد مفتاح احتياطي داخل المستودع.
+- `gradle-wrapper.jar` **مودَع في المستودع** (`gradle/wrapper/gradle-wrapper.jar`) مع
+  `distributionSha256Sum` مثبَّت، لذا يعمل `./gradlew` مباشرة دون توليد الغلاف.
 
 ## 1. المتطلبات
 
@@ -43,15 +44,9 @@
 3. `Run 'app'` على جهاز حقيقي — المحاكي لا يوفّر USB OTG فعليًا، وهذه هي الحالة التي
    يُبنى التطبيق لأجلها.
 
-> **ملاحظة عن `gradlew`:** مستودع Git لا يحتوي `gradle/wrapper/gradle-wrapper.jar`
-> (ملف ثنائي). عند الفتح أول مرة سيعرض Android Studio إنشاء الغلاف تلقائيًا،
-> أو يمكنك توليده يدويًا إن كان Gradle مثبّتًا لديك:
->
-> ```bash
-> gradle wrapper --gradle-version 8.9
-> ```
->
-> بعد ذلك يعمل `./gradlew assembleDebug` كالمعتاد.
+> **ملاحظة عن `gradlew`:** الغلاف كامل ومودَع في المستودع
+> (`gradle/wrapper/gradle-wrapper.jar` + `gradle-wrapper.properties` مع بصمة SHA-256)،
+> لذا يعمل `./gradlew assembleDebug` مباشرة بشرط توفر JDK 17. لا حاجة لتوليد الغلاف يدويًا.
 
 ## 3. أوامر مفيدة
 
@@ -67,25 +62,24 @@
 
 ## 4. توقيع نسخة الإصدار
 
-`app/build.gradle.kts` لا يحتوي توقيعًا. أضف:
+`app/build.gradle.kts` يقرأ التوقيع من متغيرات البيئة فقط، ويستخدم مخزن **PKCS12**،
+ويفشل بناء `packageRelease` عند غياب أي منها — لا يوجد signing fallback داخل المصدر:
 
-```kotlin
-android {
-    signingConfigs {
-        create("release") {
-            storeFile = file(System.getenv("KEYSTORE_PATH") ?: "release.jks")
-            storePassword = System.getenv("KEYSTORE_PASSWORD")
-            keyAlias = System.getenv("KEY_ALIAS")
-            keyPassword = System.getenv("KEY_PASSWORD")
-        }
-    }
-    buildTypes {
-        release { signingConfig = signingConfigs.getByName("release") }
-    }
-}
+| المتغير | الوصف |
+|---|---|
+| `USBMEDIA_KEYSTORE_PATH` | مسار ملف `p12` خارج المستودع |
+| `USBMEDIA_STORE_PASSWORD` | كلمة مرور المخزن |
+| `USBMEDIA_KEY_ALIAS` | الاسم المستعار للمفتاح |
+| `USBMEDIA_KEY_PASSWORD` | كلمة مرور المفتاح |
+
+```bash
+export USBMEDIA_KEYSTORE_PATH=/secure/path/usbmedia.p12
+export USBMEDIA_STORE_PASSWORD=... USBMEDIA_KEY_ALIAS=... USBMEDIA_KEY_PASSWORD=...
+./gradlew :app:assembleRelease
 ```
 
-ولا تضع `*.jks` في المستودع (مُدرَج في `.gitignore`).
+ولا تضع أي ملف `*.p12`/`*.jks`/`*.keystore` في المستودع (مُدرَجة في `.gitignore`).
+لإنشاء مفتاح جديد آمن راجع `keystore/README.md` وقسم «إعداد توقيع الإصدار» في `README.md`.
 
 ## 5. تجربة التطبيق على فلاشة USB
 
